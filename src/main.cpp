@@ -31,17 +31,14 @@ namespace PracticeReplayer {
     static int  g_replayIndex  = 0;
     static int  g_currentFrame = 0;
 
-    // Lee la config de Geode
-    bool isModEnabled()    { return Mod::get()->getSettingValue<bool>("mod-enabled");   }
+    bool isModEnabled()    { return Mod::get()->getSettingValue<bool>("mod-enabled");    }
     bool isButtonVisible() { return Mod::get()->getSettingValue<bool>("button-visible"); }
     bool isAutoReplay()    { return Mod::get()->getSettingValue<bool>("auto-replay");    }
 
-    // Ruta donde se guarda la grabacion
     std::filesystem::path savePath() {
         return Mod::get()->getSaveDir() / "practice_recording.dat";
     }
 
-    // Guarda la grabacion en disco
     void saveRecording() {
         if (g_recording.empty()) return;
         g_savedRecording = g_recording;
@@ -51,15 +48,13 @@ namespace PracticeReplayer {
 
         size_t count = g_savedRecording.size();
         file.write(reinterpret_cast<const char*>(&count), sizeof(count));
-        for (const auto& f : g_savedRecording) {
+        for (const auto& f : g_savedRecording)
             file.write(reinterpret_cast<const char*>(&f), sizeof(InputFrame));
-        }
         file.close();
 
         Notification::create("Grabacion guardada!", NotificationIcon::Success)->show();
     }
 
-    // Carga la grabacion desde disco
     bool loadRecording() {
         auto path = savePath();
         if (!std::filesystem::exists(path)) {
@@ -75,14 +70,12 @@ namespace PracticeReplayer {
         if (count == 0 || count > 1000000) return false;
 
         g_savedRecording.resize(count);
-        for (auto& f : g_savedRecording) {
+        for (auto& f : g_savedRecording)
             file.read(reinterpret_cast<char*>(&f), sizeof(InputFrame));
-        }
         file.close();
         return true;
     }
 
-    // Inicia la reproduccion
     void startReplay() {
         if (g_savedRecording.empty() && !loadRecording()) return;
         g_isReplaying  = true;
@@ -92,13 +85,11 @@ namespace PracticeReplayer {
         Notification::create("Reproduciendo grabacion!", NotificationIcon::Info)->show();
     }
 
-    // Para la reproduccion
     void stopReplay() {
         g_isReplaying = false;
         g_replayIndex = 0;
     }
 
-    // Inicia la grabacion
     void startRecording() {
         g_isReplaying = false;
         g_isRecording = true;
@@ -107,7 +98,6 @@ namespace PracticeReplayer {
         Notification::create("Grabando...", NotificationIcon::Info)->show();
     }
 
-    // Para la grabacion y guarda
     void stopRecordingAndSave() {
         if (!g_isRecording) return;
         g_isRecording = false;
@@ -116,100 +106,71 @@ namespace PracticeReplayer {
 }
 
 // ---------------------------------------------------------------------------
-// Hook: GJBaseGameLayer - maneja los inputs y el avance de frames
+// Hook: GJBaseGameLayer
 // ---------------------------------------------------------------------------
 
 class $modify(GJBaseGameLayer) {
-
-    // Se llama cada frame mientras se juega
     void update(float dt) {
         GJBaseGameLayer::update(dt);
 
         if (!PracticeReplayer::isModEnabled()) return;
         if (!PracticeReplayer::g_isReplaying)  return;
 
-        auto& saved  = PracticeReplayer::g_savedRecording;
-        int&  idx    = PracticeReplayer::g_replayIndex;
-        int&  frame  = PracticeReplayer::g_currentFrame;
+        auto& saved = PracticeReplayer::g_savedRecording;
+        int&  idx   = PracticeReplayer::g_replayIndex;
+        int&  frame = PracticeReplayer::g_currentFrame;
 
-        // Reproducir todos los frames que correspondan al frame actual
         while (idx < (int)saved.size() && saved[idx].frame == frame) {
             auto& inp = saved[idx];
-            if (inp.player2) {
-                if (inp.pressing) this->pushButton(1, true);
-                else              this->releaseButton(1, true);
-            } else {
-                if (inp.pressing) this->pushButton(1, false);
-                else              this->releaseButton(1, false);
-            }
+            if (inp.pressing) this->pushButton(1, inp.player2);
+            else              this->releaseButton(1, inp.player2);
             idx++;
         }
-
         frame++;
 
-        // Fin de la reproduccion
         if (idx >= (int)saved.size()) {
             PracticeReplayer::stopReplay();
             Notification::create("Reproduccion terminada.", NotificationIcon::Success)->show();
         }
     }
 
-    // Captura pulsaciones durante la grabacion
     void pushButton(int button, bool isPlayer2) {
         GJBaseGameLayer::pushButton(button, isPlayer2);
-
         if (!PracticeReplayer::isModEnabled()) return;
         if (!PracticeReplayer::g_isRecording)  return;
-
-        PracticeReplayer::g_recording.push_back({
-            PracticeReplayer::g_currentFrame,
-            true,
-            isPlayer2
-        });
+        PracticeReplayer::g_recording.push_back({ PracticeReplayer::g_currentFrame, true, isPlayer2 });
     }
 
     void releaseButton(int button, bool isPlayer2) {
         GJBaseGameLayer::releaseButton(button, isPlayer2);
-
         if (!PracticeReplayer::isModEnabled()) return;
         if (!PracticeReplayer::g_isRecording)  return;
-
-        PracticeReplayer::g_recording.push_back({
-            PracticeReplayer::g_currentFrame,
-            false,
-            isPlayer2
-        });
+        PracticeReplayer::g_recording.push_back({ PracticeReplayer::g_currentFrame, false, isPlayer2 });
     }
 };
 
 // ---------------------------------------------------------------------------
-// Hook: PlayLayer - resetea estado al iniciar/reiniciar nivel
+// Hook: PlayLayer
 // ---------------------------------------------------------------------------
 
 class $modify(PlayLayer) {
-
     bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
         if (!PlayLayer::init(level, useReplay, dontCreateObjects)) return false;
 
-        // Limpia el estado al cargar el nivel
         PracticeReplayer::g_isRecording  = false;
         PracticeReplayer::g_isReplaying  = false;
         PracticeReplayer::g_currentFrame = 0;
         PracticeReplayer::g_replayIndex  = 0;
         PracticeReplayer::g_recording.clear();
 
-        // Reproduccion automatica si esta activada
         if (PracticeReplayer::isModEnabled() && PracticeReplayer::isAutoReplay()) {
             PracticeReplayer::loadRecording();
-            if (!PracticeReplayer::g_savedRecording.empty()) {
+            if (!PracticeReplayer::g_savedRecording.empty())
                 PracticeReplayer::startReplay();
-            }
         }
-
         return true;
     }
 
-    // Al reiniciar el nivel desde el inicio en practica
     void resetLevel() {
         PlayLayer::resetLevel();
         PracticeReplayer::g_currentFrame = 0;
@@ -219,154 +180,12 @@ class $modify(PlayLayer) {
 };
 
 // ---------------------------------------------------------------------------
-// Boton personalizado en la UI del nivel (esquina superior derecha)
+// Hook: PauseLayer — con nombre de clase explicito para los selectores
 // ---------------------------------------------------------------------------
 
-class PracticeReplayerButton : public CCMenu {
-public:
-    CCMenuItemToggler* m_toggle = nullptr;
+class $modify(PRPauseLayer, PauseLayer) {
 
-    static PracticeReplayerButton* create() {
-        auto ret = new PracticeReplayerButton();
-        if (ret && ret->init()) {
-            ret->autorelease();
-            return ret;
-        }
-        delete ret;
-        return nullptr;
-    }
-
-    bool init() {
-        if (!CCMenu::init()) return false;
-
-        // Sprite ON / OFF usando sprites de Geode
-        auto onSpr  = CCSprite::createWithSpriteFrameName("GJ_playBtn2_001.png");
-        auto offSpr = CCSprite::createWithSpriteFrameName("GJ_stopBtn2_001.png");
-
-        if (!onSpr || !offSpr) {
-            // Fallback con texto si no hay sprites
-            auto onLbl  = CCLabelBMFont::create("REC", "bigFont.fnt");
-            auto offLbl = CCLabelBMFont::create("STOP", "bigFont.fnt");
-            onSpr  = CCSprite::create();
-            offSpr = CCSprite::create();
-        }
-
-        onSpr->setScale(0.5f);
-        offSpr->setScale(0.5f);
-
-        m_toggle = CCMenuItemToggler::create(
-            offSpr, onSpr, this, menu_selector(PracticeReplayerButton::onToggle)
-        );
-        m_toggle->setTag(1);
-
-        this->addChild(m_toggle);
-        this->setPosition({0, 0});
-        return true;
-    }
-
-    void onToggle(CCObject*) {
-        bool nowEnabled = !PracticeReplayer::isModEnabled();
-        Mod::get()->setSettingValue("mod-enabled", nowEnabled);
-
-        if (nowEnabled) {
-            Notification::create("Practice Replayer: ON", NotificationIcon::Success)->show();
-        } else {
-            PracticeReplayer::g_isRecording = false;
-            PracticeReplayer::g_isReplaying = false;
-            Notification::create("Practice Replayer: OFF", NotificationIcon::Warning)->show();
-        }
-    }
-};
-
-// ---------------------------------------------------------------------------
-// Hook: PauseLayer - agrega el panel del mod al menu de pausa
-// ---------------------------------------------------------------------------
-
-class $modify(PauseLayer) {
-
-    void customSetup() {
-        PauseLayer::customSetup();
-
-        if (!PracticeReplayer::isButtonVisible()) return;
-
-        // Panel principal
-        auto winSize = CCDirector::get()->getWinSize();
-        auto panel   = CCNode::create();
-        panel->setPosition({winSize.width - 90.f, winSize.height - 60.f});
-
-        // Fondo del panel
-        auto bg = CCScale9Sprite::create("GJ_square01.png");
-        bg->setContentSize({150.f, 120.f});
-        bg->setOpacity(200);
-        panel->addChild(bg);
-
-        // Titulo
-        auto title = CCLabelBMFont::create("Practice\nReplayer", "goldFont.fnt");
-        title->setScale(0.45f);
-        title->setPosition({0.f, 42.f});
-        panel->addChild(title);
-
-        // Menu de botones
-        auto menu = CCMenu::create();
-        menu->setPosition({0.f, 0.f});
-
-        // --- Boton GRABAR ---
-        auto recLbl = CCLabelBMFont::create("Grabar", "bigFont.fnt");
-        recLbl->setScale(0.5f);
-        auto recBtn = CCMenuItemLabel::create(
-            recLbl, this, menu_selector(PauseLayer_ExtraSetup::onRecord)
-        );
-        recBtn->setColor({255, 80, 80});
-        recBtn->setPosition({0.f, 10.f});
-        menu->addChild(recBtn);
-
-        // --- Boton REPRODUCIR ---
-        auto repLbl = CCLabelBMFont::create("Reproducir", "bigFont.fnt");
-        repLbl->setScale(0.5f);
-        auto repBtn = CCMenuItemLabel::create(
-            repLbl, this, menu_selector(PauseLayer_ExtraSetup::onReplay)
-        );
-        repBtn->setColor({80, 200, 255});
-        repBtn->setPosition({0.f, -10.f});
-        menu->addChild(repBtn);
-
-        // --- Boton GUARDAR ---
-        auto saveLbl = CCLabelBMFont::create("Guardar", "bigFont.fnt");
-        saveLbl->setScale(0.5f);
-        auto saveBtn = CCMenuItemLabel::create(
-            saveLbl, this, menu_selector(PauseLayer_ExtraSetup::onSave)
-        );
-        saveBtn->setColor({80, 255, 120});
-        saveBtn->setPosition({0.f, -30.f});
-        menu->addChild(saveBtn);
-
-        // --- Toggle Activar/Desactivar Mod ---
-        auto togLbl = CCLabelBMFont::create(
-            PracticeReplayer::isModEnabled() ? "Mod: ON" : "Mod: OFF",
-            "bigFont.fnt"
-        );
-        togLbl->setScale(0.5f);
-        togLbl->setTag(99);
-        auto togBtn = CCMenuItemLabel::create(
-            togLbl, this, menu_selector(PauseLayer_ExtraSetup::onToggleMod)
-        );
-        togBtn->setPosition({0.f, -50.f});
-        menu->addChild(togBtn);
-
-        // --- Toggle Ocultar Boton ---
-        auto hideLbl = CCLabelBMFont::create("Ocultar boton", "bigFont.fnt");
-        hideLbl->setScale(0.4f);
-        auto hideBtn = CCMenuItemLabel::create(
-            hideLbl, this, menu_selector(PauseLayer_ExtraSetup::onToggleVisible)
-        );
-        hideBtn->setColor({200, 200, 200});
-        hideBtn->setPosition({0.f, -67.f});
-        menu->addChild(hideBtn);
-
-        panel->addChild(menu);
-        this->addChild(panel, 10);
-    }
-
+    // Callbacks del menu
     void onRecord(CCObject*) {
         this->onResume(nullptr);
         PracticeReplayer::startRecording();
@@ -390,11 +209,9 @@ class $modify(PauseLayer) {
             PracticeReplayer::g_isReplaying = false;
         }
 
-        // Actualiza el texto del boton
-        if (auto btn = dynamic_cast<CCMenuItemLabel*>(sender)) {
-            if (auto lbl = dynamic_cast<CCLabelBMFont*>(btn->getLabel())) {
+        if (auto btn = typeinfo_cast<CCMenuItemLabel*>(sender)) {
+            if (auto lbl = typeinfo_cast<CCLabelBMFont*>(btn->getLabel()))
                 lbl->setString(nowEnabled ? "Mod: ON" : "Mod: OFF");
-            }
         }
 
         Notification::create(
@@ -410,5 +227,79 @@ class $modify(PauseLayer) {
             nowVisible ? "Boton visible" : "Boton oculto",
             NotificationIcon::Info
         )->show();
+    }
+
+    // Setup del panel en el menu de pausa
+    void customSetup() {
+        PauseLayer::customSetup();
+
+        if (!PracticeReplayer::isButtonVisible()) return;
+
+        auto winSize = CCDirector::get()->getWinSize();
+
+        // Fondo del panel
+        auto bg = CCScale9Sprite::create("GJ_square01.png");
+        bg->setContentSize({ 155.f, 140.f });
+        bg->setOpacity(210);
+        bg->setPosition({ winSize.width - 88.f, winSize.height - 82.f });
+        bg->setZOrder(10);
+        this->addChild(bg);
+
+        // Titulo
+        auto title = CCLabelBMFont::create("Practice\nReplayer", "goldFont.fnt");
+        title->setScale(0.45f);
+        title->setAlignment(kCCTextAlignmentCenter);
+        title->setPosition({ winSize.width - 88.f, winSize.height - 48.f });
+        title->setZOrder(11);
+        this->addChild(title);
+
+        // Menu de botones
+        auto menu = CCMenu::create();
+        menu->setPosition({ winSize.width - 88.f, winSize.height - 82.f });
+        menu->setZOrder(12);
+
+        // Grabar
+        auto recLbl = CCLabelBMFont::create("  Grabar  ", "bigFont.fnt");
+        recLbl->setScale(0.5f);
+        recLbl->setColor({ 255, 100, 100 });
+        auto recBtn = CCMenuItemLabel::create(recLbl, this, menu_selector(PRPauseLayer::onRecord));
+        recBtn->setPosition({ 0.f, 22.f });
+        menu->addChild(recBtn);
+
+        // Reproducir
+        auto repLbl = CCLabelBMFont::create("Reproducir", "bigFont.fnt");
+        repLbl->setScale(0.5f);
+        repLbl->setColor({ 100, 200, 255 });
+        auto repBtn = CCMenuItemLabel::create(repLbl, this, menu_selector(PRPauseLayer::onReplay));
+        repBtn->setPosition({ 0.f, 2.f });
+        menu->addChild(repBtn);
+
+        // Guardar
+        auto savLbl = CCLabelBMFont::create("  Guardar  ", "bigFont.fnt");
+        savLbl->setScale(0.5f);
+        savLbl->setColor({ 100, 255, 130 });
+        auto savBtn = CCMenuItemLabel::create(savLbl, this, menu_selector(PRPauseLayer::onSave));
+        savBtn->setPosition({ 0.f, -18.f });
+        menu->addChild(savBtn);
+
+        // Activar/Desactivar mod
+        auto togLbl = CCLabelBMFont::create(
+            PracticeReplayer::isModEnabled() ? "Mod: ON" : "Mod: OFF",
+            "bigFont.fnt"
+        );
+        togLbl->setScale(0.5f);
+        auto togBtn = CCMenuItemLabel::create(togLbl, this, menu_selector(PRPauseLayer::onToggleMod));
+        togBtn->setPosition({ 0.f, -38.f });
+        menu->addChild(togBtn);
+
+        // Ocultar boton
+        auto hidLbl = CCLabelBMFont::create("Ocultar btn", "bigFont.fnt");
+        hidLbl->setScale(0.4f);
+        hidLbl->setColor({ 180, 180, 180 });
+        auto hidBtn = CCMenuItemLabel::create(hidLbl, this, menu_selector(PRPauseLayer::onToggleVisible));
+        hidBtn->setPosition({ 0.f, -56.f });
+        menu->addChild(hidBtn);
+
+        this->addChild(menu);
     }
 };
