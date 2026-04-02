@@ -1,0 +1,34 @@
+{
+    "geode": "5.5.0",
+    "gd": {
+        "win": "2.2081",
+        "mac": "2.2081",
+        "android": "2.2081"
+    },
+    "id": "tuusuario.practicereplayer",
+    "name": "Practice Replayer",
+    "version": "1.0.0",
+    "developer": "TuNombre",
+    "description": "Graba tus inputs en modo practica y los reproduce automaticamente. Activa/desactiva desde el menu de pausa.",
+    "tags": ["practice", "replay", "utility"],
+    "settings": {
+        "mod-enabled": {
+            "name": "Mod Activado",
+            "description": "Activa o desactiva el Practice Replayer",
+            "type": "bool",
+            "default": true
+        },
+        "button-visible": {
+            "name": "Boton Visible",
+            "description": "Muestra u oculta el boton en el menu de pausa",
+            "type": "bool",
+            "default": true
+        },
+        "auto-replay": {
+            "name": "Reproducir al iniciar",
+            "description": "Reproducir automaticamente la grabacion al comenzar el nivel",
+            "type": "bool",
+            "default": false
+        }
+    }
+}
